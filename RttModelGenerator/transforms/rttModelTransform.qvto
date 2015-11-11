@@ -1,0 +1,638 @@
+--
+-- import the in/inout meta-models
+--
+modeltype UML uses "http://www.eclipse.org/uml2/4.0.0/UML";
+
+--
+-- import other meta-models involved in the transformation
+--
+// specify FlowDirection::_'in' & FlowDirection::_'out'
+modeltype PortAndFlows uses "http://www.eclipse.org/papyrus/0.7.0/SysML/PortAndFlows";
+// specify the Ecore meta-model to enable the creation of EAnnotations details
+modeltype Ecore uses 'http://www.eclipse.org/emf/2002/Ecore';
+
+transformation rttModelTransform(inout mdl:UML);
+
+--
+-- properties
+--
+// the source/dest model
+property the_mdl =  mdl.rootObjects()![Model];
+
+// the Functional package inside the model
+//
+// NOTE-- This package is actually imported by the system designer
+// (it is assumed that the designer exploits the separation of
+// concerns fostered by the "Y-Chart Robotics" design approach) --END NOTE
+//
+// & the FunctionalSystem Block (from the Functional package)
+property fct_pkg = the_mdl.ownedElement[PackageImport]->importedPackage[UML::Model]->select(m | m.name = "Functional")->asOrderedSet()->first();
+property fct_blk = fct_pkg.ownedElement![Class];
+
+// the Mapping package inside the model
+// & the ProcessModel package
+// & the CommunicationModel package
+// & the AutoGenMappingModel package (this is the destination model package)
+// & the MappingSystem Block
+property map_pkg = the_mdl.ownedElement->select(e | e.oclIsKindOf(Package)).oclAsType(Package)![name = "Mapping"];
+property pcs_pkg = map_pkg.ownedElement->select(e | e.oclIsKindOf(Package)).oclAsType(Package)![name = "ProcessModel"];
+property cmn_pkg = map_pkg.ownedElement->select(e | e.oclIsKindOf(Package)).oclAsType(Package)![name = "CommunicationModel"];
+property aut_pkg = map_pkg.ownedElement->select(e | e.oclIsKindOf(Package)).oclAsType(Package)![name = "AutoGenMappingModel"];
+property map_blk = map_pkg.ownedElement![Class];
+
+// the SRFunctional profile (YchartRobotics/Functional)
+// & the SRSubsystem stereotype
+// & the SRPort stereotype
+// & the SRBinaryOrder stereotype
+// & the MonoDimensionalArray stereotype
+// & the MultiDimensionalArray stereotype
+property srf_prf = the_mdl.getAppliedProfiles()![name = "Functional"];
+property sub_stp = srf_prf.ownedStereotype![name = "SRSubsystem"];
+property prt_stp = srf_prf.ownedStereotype![name = "SRPort"];
+property bor_stp = srf_prf.ownedStereotype![name = "SRBinaryOrder"];
+property a1d_stp = srf_prf.ownedStereotype![name = "MonoDimensionalArray"];
+property aNd_stp = srf_prf.ownedStereotype![name = "MultiDimensionalArray"];
+
+// the Concurrency, Interaction and Allocation profiles (from YchartRobotics/Mapping)
+// & the Process stereotype						// Conc
+// & the PeriodicThread stereotype				// Conc
+// & the LockFreeComImpl stereotype				// Inter
+// & the FunctionToThreadMap stereotype			// Alloc
+// & the SignalToSharedResMap stereotype		// Alloc
+// & the ThreadToCPUMap stereotype				// Alloc
+property cur_prf = the_mdl.getAppliedProfiles()![name = "Concurrency"];
+property int_prf = the_mdl.getAppliedProfiles()![name = "Interaction"];
+property all_prf = the_mdl.getAppliedProfiles()![name = "Allocation"];
+property pcs_stp = cur_prf.ownedStereotype![name = "Process"];
+property pth_stp = cur_prf.ownedStereotype![name = "PeriodicThread"];
+property lfc_stp = int_prf.ownedStereotype![name = "LockFreeComImpl"];
+property f2t_stp = all_prf.ownedStereotype![name = "FunctionToThreadMap"];
+property s2r_stp = all_prf.ownedStereotype![name = "SignalToSharedResMap"];
+property t2c_stp = all_prf.ownedStereotype![name = "ThreadToCPUMap"];
+
+// the Platform package inside the model
+//
+// NOTE-- This package is actually imported by the system designer
+// (it is assumed that the designer exploits the separation of
+// concerns fostered by the "Y-Chart Robotics" design approach) --END NOTE
+//
+// & the PlatformSystem Block (from the Platform package)
+property pla_pkg = the_mdl.ownedElement[PackageImport]->importedPackage[UML::Model]->select(m | m.name = "Platform")->asOrderedSet()->first();
+property pla_blk = pla_pkg.ownedElement![Class];
+
+// The HwResources::HwComputing profile
+// & the HwProcessor stereotype
+property hcp_prf = the_mdl.getAppliedProfiles()![name = "HwComputing"];
+property cpu_stp = hcp_prf.ownedStereotype![name = "HwProcessor"];
+
+// the BswRobotMW profile (from YchartRobotics/Platform/BswResources)
+// & the RttStaticDeployment stereotype
+// & the RttTaskContext stereotype
+// & the RttActivity stereotype
+// & the RttConnPolicy stereotype
+property bmw_prf = the_mdl.getAppliedProfiles()![name = "BswRobotMW"];
+property sdp_stp = bmw_prf.ownedStereotype![name = "RttStaticDeployment"];
+property tsk_stp = bmw_prf.ownedStereotype![name = "RttTaskContext"];
+property act_stp = bmw_prf.ownedStereotype![name = "RttActivity"];
+property run_stp = bmw_prf.ownedStereotype![name = "RttRuns"];
+property ipo_stp = bmw_prf.ownedStereotype![name = "RttIsPeerOf"];
+property cnn_stp = bmw_prf.ownedStereotype![name = "RttConnPolicy"];
+property dop_stp = bmw_prf.ownedStereotype![name = "RttOutputPort"];
+property dip_stp = bmw_prf.ownedStereotype![name = "RttDataFlowInPort"];
+property eip_stp = bmw_prf.ownedStereotype![name = "RttEventInPort"];
+property cnt_enu = bmw_prf.ownedElement[Enumeration]->select(e | e.name = "RttConnPolicyKind");
+property cnl_enu = bmw_prf.ownedElement[Enumeration]->select(e | e.name = "RttConnPolicyLockKind");
+
+// the Block stereotype (from the SysML::Blocks profile)
+property blk_stp = the_mdl.getAppliedProfiles()->ownedStereotype![name = "Block"];
+
+main() {
+
+	--
+	-- perform the M2M transformation
+	--
+	log("TRANSFORMATION BEGIN");
+	log("====================");
+	log("");
+
+	// transform Threads to Activity/TaskContext elements (LivingComponents)
+	var setOfPeriodicThreads := pcs_pkg.ownedElement->select(e | e.isStereotypeApplied(pth_stp))->oclAsType(Class)->asSet();
+	log("Generating Activity/TaskContext elements...");
+	setOfPeriodicThreads->map toLivingComponent();
+	log("done.\n");
+
+	// transform Processes to StaticDeployments
+	// & associate TaskContexts to StaticDeployments
+	var setOfProcesses := pcs_pkg.ownedElement->select(e | e.isStereotypeApplied(pcs_stp))->oclAsType(Class)->asSet();
+	log("Generating StaticDeployment elements...");
+	setOfProcesses->map toStaticDeployment();
+	log("done.\n");
+
+	// generate Dispatchers (pave the way towards flow-preservation
+	// in single-/multi-core architectures -- Scheduling tables,
+	// inter-core activation event signals still have to be implemented
+	// at this point)
+	var setOfThreadDeployments := map_pkg.packagedElement->select(e | e.isStereotypeApplied(t2c_stp))->oclAsType(Abstraction)->asSet();
+	var setOfCPUsExecutingThreads := setOfThreadDeployments->supplier->oclAsType(Property).type.oclAsType(Class)->asSet();
+	log("Generating Dispatcher elements...");
+	setOfCPUsExecutingThreads->map toLocalFlowPreservationMechanism(setOfThreadDeployments);
+	log("done.\n");
+
+	log("");
+	log("TRANSFORMATION END");
+	log("==================");
+}
+
+--
+-- maps
+--
+// Thread -> Activity/TaskContext
+mapping Class::toLivingComponent() : Class {
+
+	// this mapping returns a Class (Activity)
+	// that will be useful later for resolving purposes
+
+	// add the Class (result) to the dest package
+	// *so that the profiles are applicable*
+	// & set the basic name attribute
+	// & generate the corresponding Property element
+	aut_pkg.packagedElement += result;
+	result.name := "Activity_" + self.name;
+
+	// apply stereotypes: Activity
+	safelyApplyStereotype(result, act_stp);
+
+	// create another Class element (the corresponding TaskContext)
+	// & generate the corresponding Property element
+	var tsk_cls := object Class {name := "TaskCtx_" + self.name;};
+	aut_pkg.packagedElement += tsk_cls;
+
+	// apply stereotypes: TaskContext
+	safelyApplyStereotype(tsk_cls, tsk_stp);
+
+	// create a directed association between the Activity and the TaskContext
+	// & between the Activity and the Thread
+	result.map toPropertyReference().map toDirectedAssociation(AggregationKind::none, tsk_cls.map toPropertyReference(), aut_pkg, run_stp, "Runs");
+	result.map toPropertyReference().clone().oclAsType(Property).map toDirectedAssociation(AggregationKind::none, self.map toPropertyReference(), aut_pkg, null, "IsABswImplOf");
+
+	// set attributes
+	//
+	// Activity
+	result.visibility := VisibilityKind::public;
+	result.setValue(act_stp, "period", 	  self.getValue(pth_stp, "period")); // Note that this is a temporary
+																			 // assignment: all the Activities
+																			 // corresponding to Threads are
+																			 // non-periodic Activities.
+																			 //
+																			 // Periods are managed later, in the
+																			 // mapping defining the dispatcher
+																			 // component (Integer::toDispatcherComponent())
+	result.setValue(act_stp, "priority",  self.getValue(pth_stp, "priority")); // TODO: check if consisten with SRBinaryOrders
+																			   // eventually, we could also determine it
+																			   // automatically (from SRBinaryOrders)
+																			   // (and lighten the weight of the priority value
+																			   // specified by the designer for threads?)
+	// "coreAfn" is set below in Class::toDispatcherComponent
+	result.setValue(act_stp, "run", tsk_cls);	 // does not have any effect yet (!?)
+	result.setValue(act_stp, "thrAbstr",  self); // does not have any effect neither...
+
+	// TaskContext
+	// result.visibility := VisibilityKind::public; // ??
+	// peers -> later
+}
+
+// Process -> StaticDeployment
+mapping Class::toStaticDeployment() : Class {
+
+	// add the Class (result) to the dest package
+	// *so that the profiles are applicable*
+	// & set the basic name attribute
+	// & generate a directed composition relationship to connect with the MappingSystem block
+	aut_pkg.packagedElement += result;
+	result.name := "StaticDeployment_" + self.name;
+	map_blk.map toPropertyReference().map toDirectedAssociation(AggregationKind::composite, result.map toPropertyReference().clone().oclAsType(Property), map_pkg, null, "IsMadeUpOf");	
+
+	// then apply stereotypes: StaticDeployment
+	safelyApplyStereotype(result, sdp_stp);
+
+	// given a Process (self) get back its Threads
+	var setOfThreadsProperty := self.ownedAttribute->select(p | p.type.isStereotypeApplied(pth_stp))->asSet();
+
+	// resolve Threads for the corresponding TaskContexts (Property) ...
+	var setOfTaskContextsProperty := setOfThreadsProperty->type->oclAsType(Class)
+										->resolveIn(Class::toLivingComponent, Class)->ownedAttribute
+											->select(p | p.type.isStereotypeApplied(tsk_stp))->asSet();
+	// ... & Activities (Property)
+	var setOfActivitiesProperty := setOfThreadsProperty->type->oclAsType(Class)
+										->resolveIn(Class::toLivingComponent, Class)
+											.resolveIn(Class::toPropertyReference, UML::Property)
+												->select(p | p.type.isStereotypeApplied(act_stp))->asSet();
+
+	// collect the corresponding maps (FunctionToThreadMap, SignalToSharedResMap)
+	var setOfSubsystemMaps := map_pkg.packagedElement->select(e | e.isStereotypeApplied(f2t_stp))->oclAsType(Abstraction)->asSet();
+	var setOfResourceMaps := map_pkg.packagedElement->select(e | e.isStereotypeApplied(s2r_stp))->oclAsType(Abstraction)->asSet();
+
+	// identify the functional connection that is mapped onto each lock-free commn resource
+	var setOfResourceMapsToLockFree := setOfResourceMaps->select(e |
+										e.client.oclAsType(Property).type->asSequence()->first()
+											.isStereotypeApplied(lfc_stp))
+												->supplier->asSet();
+	var setOfConnections := setOfResourceMapsToLockFree->oclAsType(Connector)->asSet();
+
+	// set the attributes of the StaticDeployment:
+	// - visibility
+	// - _ConnectionPolicies_ (between _TaskContexts_ with _Ports_)
+	// - TaskContexts (with _Ports_)
+	// - Activities
+	result.visibility := VisibilityKind::public;
+	setOfConnections->map toConnectedTaskContextsWithPorts(result, setOfSubsystemMaps);
+	setOfTaskContextsProperty->forEach(tcx_ppt){result.map toPropertyReference().map toDirectedAssociationCloneInputs(AggregationKind::composite, tcx_ppt, aut_pkg, null, "IsMadeUpOf");};
+	setOfActivitiesProperty->forEach(act_ppt){result.map toPropertyReference().map toDirectedAssociationCloneInputs(AggregationKind::composite, act_ppt, aut_pkg, null, "IsMadeUpOf");};
+	// TODO: Assign the right value to procAbstr/threadAbstr
+
+}
+
+// Functional connection -> Connected TaskContexts With Ports
+mapping Connector::toConnectedTaskContextsWithPorts(inout staticDeployment : Class, in setOfSubsystemMaps : Set(Dependency)) {
+
+	// get the components connected by the functional connection
+	var setOfConnectedSubsystems := self->_'end'->partWithPort->type->oclAsType(Class);
+
+	// identify the 'source' TaskContext, i.e., the TaskContext instance corresponding to the source SubSystem
+	var sourceSubsystem := setOfConnectedSubsystems->first();
+	var sourceThread := setOfSubsystemMaps->select(d | d.supplier->asOrderedSet()->first().oclAsType(Property).type.oclAsType(Class) = sourceSubsystem)
+												.client->asOrderedSet()->first().oclAsType(Property).type.oclAsType(Class);
+	var sourceTaskContext := sourceThread.resolveoneIn(Class::toLivingComponent, Class).ownedAttribute
+												->select(p | p.type.isStereotypeApplied(tsk_stp))->asOrderedSet()->first().type.oclAsType(Class);
+
+	// identify the 'destination' TaskContext, i.e., the TaskContext instance corresponding to the destination SubSystem
+	var destinationSubsystem := setOfConnectedSubsystems->last();
+	var destinationThread := setOfSubsystemMaps->select(d | d.supplier->asOrderedSet()->first().oclAsType(Property).type.oclAsType(Class) = destinationSubsystem)
+												.client->asOrderedSet()->first().oclAsType(Property).type.oclAsType(Class);
+	var destinationTaskContext := destinationThread.resolveoneIn(Class::toLivingComponent, Class).ownedAttribute
+												->select(p | p.type.isStereotypeApplied(tsk_stp))->asOrderedSet()->first().type.oclAsType(Class);
+
+	// generate a FlowPort instance for the 'source' TaskContext (and stereotype it as OutputPort)
+	// (the name is sourceSubsystem.name_out_#i, where #i is the number of ownedAttribute - 1 (one ownedAttribute is the Activity))
+	// & add the flow direction (out)
+	var sourceDataFlowPort := object Port { name := sourceSubsystem.name + "_" + self->_'end'->first().role.name; }; // should use _out_+'index' in EE meta-model to avoid using the actual port name 
+	sourceTaskContext.ownedAttribute += sourceDataFlowPort;
+	safelyApplyStereotype(sourceDataFlowPort, dop_stp);
+	sourceDataFlowPort.setValue(dop_stp, "direction", FlowDirection::_'out');
+
+	// generate a FlowPort instance for the 'destination' TaskContext (and stereotype it as DataFlowInputPort)
+	// (the name is inputPort#i, where #i is the number of ownedAttribute - 1 (one ownedAttribute is the Activity))
+	// & add the flow direction (in)
+	var destinationDataFlowPort := object Port { name := destinationSubsystem.name + "_" + self->_'end'->last().role.name; };
+	destinationTaskContext.ownedAttribute += destinationDataFlowPort;
+	safelyApplyStereotype(destinationDataFlowPort, dip_stp);
+	destinationDataFlowPort.setValue(dip_stp, "direction", FlowDirection::_'in');
+
+	// generate a ConnectionPolicy instance connecting the 'source' and the 'destination' TaskContexts
+	// & add source and target ports (ConnectorEnds)
+	// & add source and target TaskContexts
+	// & set its attributes
+	var connPolicy := object Connector { name := "cp_" + self.name; };
+	staticDeployment.ownedConnector += connPolicy;
+	safelyApplyStereotype(connPolicy, cnn_stp);
+	var sourceConnectorEnd := object ConnectorEnd { role := sourceDataFlowPort;
+													partWithPort := sourceTaskContext.resolveoneIn(Class::toPropertyPart, Property); };
+	var destinationConnectorEnd := object ConnectorEnd { role := destinationDataFlowPort;
+														 partWithPort := destinationTaskContext.resolveoneIn(Class::toPropertyPart, Property); };
+	connPolicy._'end' += sourceConnectorEnd;
+	connPolicy._'end' += destinationConnectorEnd;
+	connPolicy.setValue(cnn_stp, "lock", cnl_enu.ownedElement.oclAsType(NamedElement)![name = "LOCK_FREE"]);
+	connPolicy.setValue(cnn_stp, "type", cnt_enu.ownedElement.oclAsType(NamedElement)![name = "DATA"]);
+	connPolicy.setValue(cnn_stp, "size", 1); // TODO: size of SRPort ...
+
+}
+
+// CPUsExecutingThreads -> Dispatchers
+// (WHEN the number of TaskContext running onto a core is > 1,)
+// Generate as many dispatcher components as the number of cores of the current CPU (self)
+// that do actually execute threads (for each core, generate one dispatcher)
+// dispatcher component:
+//		- activity/taskcontext couple,
+//		- running periodically at the base period equal to the GCD of the periods
+//		  of all the tasks executing on its core
+//		- having the taskcontext running on the same core as peers	
+//
+mapping Class::toLocalFlowPreservationMechanism(in setOfThreadDeployments : Set(Abstraction)) {
+
+	// select all the deployments onto the current CPU (self)
+	// & sort them by core (i.e., all the deployments onto core0, all the deployments onto core1, all the deployments onto core2, and so on)
+	// & sort them by process (i.e., all the deployments of threads in process1, all the deployments of threads in process2, and so on)
+	var setOfDeploymentsOntoTheCurrentCPUByCore := setOfThreadDeployments->select(d | d.supplier->asOrderedSet()->first()
+																						.oclAsType(Property).type = self)
+																							->sortedBy(getValue(t2c_stp, "coreAfn").toString().toInteger())
+																								->asOrderedSet();
+
+	// get back all the Activities running onto the current CPU sorted by coreAffinity
+	var setOfActivitiesRunningByCore := setOfDeploymentsOntoTheCurrentCPUByCore->client->asOrderedSet()	 // OrderedSet { threads }
+											->oclAsType(Property)->type->oclAsType(Class) 				 // Set { Threads }
+												->resolveIn(Class::toLivingComponent, Class)			 // Sequence(?) { Activities } 
+													->asOrderedSet();
+
+	// set the core (cpu) affinity in the activities
+	// & select the cores involved in their execution (setOfCoreNumbers)
+	// (and the execution of the corresponding taskcontexts)
+	var setOfCoreNumbers := OrderedSet { 0 };    // set of core numbers of the current CPU
+												 // (0 is for core#0, 1 is core#1, ...)
+	var previousCpuAffinityOfActivity := 0;		 // temp value used for updating the ordered set above
+	var currentIndex := 1;						 // current index of ordered sets under investigation
+	setOfActivitiesRunningByCore->forEach(currentActivity) {
+		// get the deployment relationship involving the current Activity
+		var currentDeployment := setOfDeploymentsOntoTheCurrentCPUByCore->at(currentIndex);
+		// get the Activity core affinity from the current deployment relationship
+		var currentCpuAffinityOfActivity := currentDeployment.getValue(t2c_stp, "coreAfn").toString().toInteger();
+		// assign it to the Activity
+		currentActivity.setValue(act_stp, "coreAfn", currentCpuAffinityOfActivity.toString());
+		// add the current index to the set of indices of cores (if needed)
+		if (currentCpuAffinityOfActivity <> previousCpuAffinityOfActivity) then {
+			previousCpuAffinityOfActivity := currentCpuAffinityOfActivity;
+			setOfCoreNumbers := setOfCoreNumbers->append(currentCpuAffinityOfActivity);
+		} endif;
+		// update the current index
+		currentIndex := currentIndex + 1;
+	};
+
+	// for each core generate a dispatcher component,
+	// i.e., an activity (scheduler, period, priority, coreAfn)
+	// and a task context (with peers)
+	setOfCoreNumbers->map toDispatcherComponent(setOfActivitiesRunningByCore);
+
+}
+
+// Map a Core number to a Dispatcher Component
+mapping Integer::toDispatcherComponent(in setOfActivitiesRunningByCore : OrderedSet(Class))
+{
+
+	// Preliminary op: select the Activities running onto the current core
+	var setOfActivitiesOntoTheCore := setOfActivitiesRunningByCore
+											->select(c | c.getValue(act_stp, "coreAfn")
+												.toString().toInteger() = self)
+													->asOrderedSet();
+
+	// Preliminary op: get the set of TaskContext (Properties) from the set of Activities running onto the current core
+	var setOfTaskContextsOntoTheCoreProperty := setOfActivitiesOntoTheCore->ownedAttribute		      // OrderedSet(Property) , where Property is threadXX, taskcontextXX, etc... 
+													->select(p | p.type.isStereotypeApplied(tsk_stp)) // Set (taskcontext)
+														->asOrderedSet();
+
+	// Create the Dispatcher object
+	var dispatcherActivity := object Class { name := "Dispatcher_Activity_core_" + self.toString(); };
+	var dispatcherActivityProperty := dispatcherActivity.map toPropertyReference();
+	var dispatcherTaskContext := object Class { name := "Dispatcher_Task_core_" + self.toString(); };
+	var dispatcherTaskContextProperty := dispatcherTaskContext.map toPropertyReference();
+
+	// Set Dispatcher's stereotypes & attributes (a subset of)
+	//
+	// activity
+	//
+	aut_pkg.packagedElement += dispatcherActivity;
+	safelyApplyStereotype(dispatcherActivity, act_stp);
+	dispatcherActivity.visibility := VisibilityKind::public;
+	// "period" is set below, after that peers of dispatcher have been identified
+	dispatcherActivity.setValue(act_stp, "priority",  0);  	// This will actually translated by Acceleo to
+															// the highest priority provided by the RTOS...
+	dispatcherActivity.setValue(act_stp, "coreAfn", self);
+	// there's no "thrAbstr" to set for a Dispatcher
+	dispatcherActivityProperty.map toDirectedAssociation(AggregationKind::none, dispatcherTaskContextProperty, aut_pkg, run_stp, "Runs");
+	dispatcherActivity.setValue(act_stp, "run", dispatcherTaskContext);	 // does not have any effect yet (!?)
+	//
+	// taskcontext
+	aut_pkg.packagedElement += dispatcherTaskContext;
+	safelyApplyStereotype(dispatcherTaskContext, tsk_stp);
+	dispatcherTaskContext.visibility := VisibilityKind::public;
+
+	// Now, add the Dispatcher (TaskContext) to the StaticDeployment running onto the current core
+	// TODO (BIG FAT ASSUMPTION)
+	// NOTE-- Assuming only one process runs onto a given core
+	// (This should be somewhat enforced by an OCL rule at
+	// model level) --NOTE
+	//
+	// 
+	// NOTE-- To select the StaticDeployment running onto the current core, one cannot simply do
+	// 
+	//		setOfTaskContextsOntoTheCoreProperty->first()._class;
+	//
+	// This because the set of taskcontext (Properties) extracted from an Activity is
+	// different from that extracted from a StaticDeployment. Here, the variable
+	// setOfTaskContextsOntoTheCoreProperty is an OrderedSet extracted from Activities,
+	// therefore ._class would return an Activity object.
+	//
+	// However, taskcontext.type will refer the same (TaskContext) Class for taskcontexts
+	// extracted from both Activities and StaticDeployments.
+	//
+	// Note that, we're assuming there is at most *one* StaticDeployment onto a core (see above);
+	// therefore, all the Activities (Threads) running onto the same core will also run
+	// inside the same StaticDeployment (Process).
+	//
+	// To select the StaticDeployment running onto the current core, it is sufficient
+	// to see which StaticDeployment includes the TaskContext (taskcontext.type) that is
+	// also associated to one (e.g., the first one) of the Activities running onto the current core
+	// (because a Thread runs in one and only one Process)   
+	// --NOTE
+	var staticDeploymentOntoTheCore := aut_pkg.packagedElement
+									->select(d | d.isStereotypeApplied(sdp_stp))->oclAsType(Class)	// Bag ( StaticDeployment )
+										->select(d | d.ownedAttribute								// for each StaticDeployment,
+												->type->oclAsType(Class)							// Bag ( TaskContext )
+													->includes(
+														setOfTaskContextsOntoTheCoreProperty->first().type.oclAsType(Class)
+													)
+												)													// Bag ( StaticDeployment )
+												->asOrderedSet()->first();							// StaticDeployment
+
+	// Get the corresponding Property of staticDeploymentOntoTheCore
+	// (commented sections are the 1st solution I came up, but it does not work. Don't know why...)
+	/**var staticDeploymentOntoTheCoreProperty := staticDeploymentOntoTheCore
+													.resolveoneIn(Class::toPropertyReference, UML::Property);*/
+	var staticDeploymentOntoTheCoreProperty := staticDeploymentOntoTheCore.map toPropertyReference();
+
+	// Add a DirectedComposition relationship between the StaticDeployment (owner) and the Dispatcher components
+	/**staticDeploymentOntoTheCoreProperty.map toDirectedAssociationCloneInputs(AggregationKind::composite,
+														dispatcherTaskContextProperty,
+															aut_pkg, null, "IsMadeUpOf");*/
+	if (self > 0) then {
+		staticDeploymentOntoTheCoreProperty.map toDirectedAssociationCloneInputs(AggregationKind::composite,
+														dispatcherTaskContextProperty,
+															aut_pkg, null, "IsMadeUpOf");
+	} else {
+		staticDeploymentOntoTheCoreProperty.map toDirectedAssociation(AggregationKind::composite, dispatcherTaskContextProperty.clone().oclAsType(Property),
+															aut_pkg, null, "IsMadeUpOf");
+	} endif;
+
+	// Add also a DirectedComposition relationship between the StaticDeployment and the Dispatcher activity
+	staticDeploymentOntoTheCoreProperty.map toDirectedAssociationCloneInputs(AggregationKind::composite,
+														dispatcherActivityProperty,
+															aut_pkg, null, "IsMadeUpOf");
+
+	// Now, add the "functional" components as peers of the Dispatcher component
+	setOfTaskContextsOntoTheCoreProperty->forEach(tsk_ppt) { dispatcherTaskContextProperty.clone().oclAsType(Property).map toDirectedAssociation(AggregationKind::none, tsk_ppt.clone().oclAsType(Property), aut_pkg, ipo_stp, "IsPeerOf");};
+
+	// Finally, set the "period" of the dispatcher activity (the GCD of the periods of peers)
+	var dispatcherActivityPeriod := setOfActivitiesOntoTheCore->getValue(act_stp, "period");//->GCD();
+	--dispatcherActivity.setValue(act_stp, "period",  dispatcherActivityPeriod);	// FIXME!!!!
+
+	// adjust the period of the Activities that correspond to Threads (non-periodic, see Class::toActivity())
+	setOfActivitiesOntoTheCore->setValue(act_stp, "period", 0);
+
+}
+
+--
+-- map utils
+--
+-- ...
+mapping Class::toPropertyPart() : Property {
+
+	// A "class" is automatically created 
+	result.name := self.name;
+
+	// Create a "type"
+	result.type := self;
+
+	// Make it a part, not a reference (AggregationKind::none, AggregationKind::shared)
+	result.aggregation := AggregationKind::composite;
+
+}
+
+mapping Class::toPropertyReference() : Property {
+
+	// A "class" is automatically created 
+	result.name := self.name;
+
+	// Create a "type"
+	result.type := self;
+
+}
+
+// Create an Association between two given Classes in a Package
+mapping Property::toDirectedAssociation(in agg_type : AggregationKind, inout tgt_ppt : Property, inout pkg : Package, in stereo : Stereotype, in label:String) : Association {
+
+	// composition or association ?
+	if (agg_type <> AggregationKind::none) then {
+		tgt_ppt.aggregation := agg_type;
+	} endif;
+
+	// add the class to the destination model instance
+	// *so that the profiles are applicable*
+	// & set the basic name attribute
+	pkg.packagedElement += result;
+	result.name := self.name + label + tgt_ppt.name;
+	if (result.isStereotypeApplicable(stereo)) then {
+		safelyApplyStereotype(result, stereo);
+	} endif;
+
+	// annotation/details (needed to be able to draw the association relationship in Papyrus Diagrams)
+	var r_ean := result.createEAnnotation("org.eclipse.papyrus");
+	r_ean.details += object Ecore::EStringToStringMapEntry{key := "nature"; value := "SysML_Nature"};
+
+	// set attributes
+	result.visibility := VisibilityKind::public;
+	result.eAnnotations += r_ean;
+	result.ownedEnd += self;
+	result.memberEnd += tgt_ppt;
+
+	// finally append the tgt_ppt (Property) to the ownedAttributes of the slf_cls (Class)
+	var slf_cls := self.type.oclAsType(Class);
+	slf_cls.ownedAttribute += tgt_ppt;
+
+}
+
+// Clone the inputs and create an Association between two Classes in a Package
+mapping Property::toDirectedAssociationCloneInputs(in agg_type : AggregationKind, inout tgt_ppt : Property, inout pkg : Package, in stereo : Stereotype, in label:String) : Association {
+
+	// Clone owner and target
+	var slf_ppt_clone := self.clone().oclAsType(Property);
+	var tgt_ppt_clone := tgt_ppt.clone().oclAsType(Property);
+
+	//slf_ppt_clone.map toDirectedAssociation(agg_type, tgt_ppt_clone, pkg, stereo, label);
+	// composition or association ?
+	if (agg_type <> AggregationKind::none) then {
+		tgt_ppt_clone.aggregation := agg_type;
+	} endif;
+
+	// add the class to the destination model instance
+	// *so that the profiles are applicable*
+	// & set the basic name attribute
+	pkg.packagedElement += result;
+	result.name := self.name + label + tgt_ppt.name;
+	if (result.isStereotypeApplicable(stereo)) then {
+		safelyApplyStereotype(result, stereo);
+	} endif;
+
+	// annotation/details (needed to be able to draw the association relationship in Papyrus Diagrams)
+	var r_ean := result.createEAnnotation("org.eclipse.papyrus");
+	r_ean.details += object Ecore::EStringToStringMapEntry{key := "nature"; value := "SysML_Nature"};
+
+	// set attributes
+	result.visibility := VisibilityKind::public;
+	result.eAnnotations += r_ean;
+	result.ownedEnd += slf_ppt_clone;
+	result.memberEnd += tgt_ppt_clone;
+
+	// finally append the tgt_ppt (Property) to the ownedAttributes of the slf_cls (Class)
+	var slf_cls := slf_ppt_clone.type.oclAsType(Class);
+	slf_cls.ownedAttribute += tgt_ppt_clone;
+
+}
+
+--
+-- queries
+--
+-- display the qualifiedName of each applied profile
+query Profile::displayName() {
+	log(self.qualifiedName);
+}
+
+-- ...
+query Class::displayName() {
+	log(self.name);
+}
+
+-- ...
+query Property::displayName() {
+	log(self.type.name);
+}
+
+-- ...
+query Dependency::displayName() {
+	log(self.name);
+}
+
+--
+-- helpers
+--
+-- apply a stereotype to an element with error-checking
+helper safelyApplyStereotype(element : Element, stereotype : Stereotype) {
+	if (not element.isStereotypeApplicable(stereotype)) then {
+	 	log("ERROR: stereotype " + stereotype.qualifiedName + " is not applicable to element " + element.repr());
+	} else {
+		element.applyStereotype(stereotype);
+		log("Element " + element.oclAsType(NamedElement).name + ": applied the stereotype " + stereotype.qualifiedName);
+	} endif;
+}
+
+-- GCD (Set)
+helper Sequence(Integer)::GCD() : Integer {
+
+	var gcd : Integer := 0;
+	self->forEach(number) {
+		gcd := number.GCD(gcd);
+	};
+	return gcd;
+
+}
+
+-- GCD (pair)
+helper Integer::GCD(in v : Integer) : Integer {
+
+	var u := self;
+
+	if (v = 0) then {
+
+		return u;
+
+	} endif;
+
+	v.GCD(u.mod(v));
+}
